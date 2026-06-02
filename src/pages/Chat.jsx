@@ -35,6 +35,14 @@ export default function Chat({ messages, setMessages }) {
     setLoading(false);
   }
 
+  function formatarWhatsApp(texto) {
+    return texto
+      .replace(/\*(.*?)\*/g, '<strong>$1</strong>')
+      .replace(/_(.*?)_/g, '<em>$1</em>')
+      .replace(/~~(.*?)~~/g, '<s>$1</s>')
+      .replace(/\n/g, '<br/>');
+  }
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -56,11 +64,11 @@ export default function Chat({ messages, setMessages }) {
             {m.role === "jarvis" && (
               <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#6c5fff] to-[#a78bfa] flex items-center justify-center text-sm shrink-0 mt-1">🤖</div>
             )}
-            <div className={`max-w-[65%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap
+            <div className={`max-w-[65%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed
               ${m.role === "user"
                 ? "bg-gradient-to-br from-[#6c5fff] to-[#a78bfa] text-white rounded-br-sm"
                 : "bg-[#1a1a28] text-[#c8c8e0] rounded-bl-sm"}`}>
-              {m.text}
+              <span dangerouslySetInnerHTML={{ __html: formatarWhatsApp(m.text) }} />
             </div>
           </div>
         ))}

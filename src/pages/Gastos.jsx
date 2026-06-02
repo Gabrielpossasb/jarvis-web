@@ -20,8 +20,8 @@ const CAT_ABREV = {
 };
 
 const TODAS_CATS = [
-  "Alimentação", "Assinaturas", "Cartão/Fatura", "Cuidados Pessoais",
-  "Dívidas/Empréstimo", "Outros", "Presentes", "Relacionamento", "Saúde", "Transporte"
+  "Alimentação","Assinaturas","Cartão/Fatura","Cuidados Pessoais",
+  "Dívidas/Empréstimo","Outros","Presentes","Relacionamento","Saúde","Transporte"
 ];
 
 // ── Célula de categoria editável ──────────────────────────────────
@@ -30,15 +30,13 @@ function CatCell({ gasto, onUpdate }) {
   const [salvando, setSalvando] = useState(false);
   const selectRef = useRef();
 
-  useEffect(() => {
-    if (editando && selectRef.current) selectRef.current.focus();
-  }, [editando]);
+  useEffect(() => { if (editando && selectRef.current) selectRef.current.focus(); }, [editando]);
 
   async function salvar(novacat) {
     if (novacat === gasto.categoria) { setEditando(false); return; }
     setSalvando(true);
     await supabase.from("gastos").update({ categoria: novacat }).eq("id", gasto.id);
-    onUpdate(gasto.id, novacat);
+    onUpdate(gasto.id, "categoria", novacat);
     setSalvando(false);
     setEditando(false);
   }
@@ -56,12 +54,48 @@ function CatCell({ gasto, onUpdate }) {
   }
 
   return (
-    <span
-      onClick={() => setEditando(true)}
-      title={`${gasto.categoria} — clique para editar`}
+    <span onClick={() => setEditando(true)} title={`${gasto.categoria} — clique para editar`}
       className="text-[10px] px-1.5 py-0.5 rounded w-fit max-w-full truncate cursor-pointer hover:opacity-70 transition-opacity"
       style={{ background: `${CORES_CAT[gasto.categoria] || "#6c5fff"}20`, color: CORES_CAT[gasto.categoria] || "#6c5fff" }}>
       {salvando ? "..." : (CAT_ABREV[gasto.categoria] || gasto.categoria)}
+    </span>
+  );
+}
+
+// ── Célula de tipo editável ───────────────────────────────────────
+function TipoCell({ gasto, onUpdate }) {
+  const [editando, setEditando] = useState(false);
+  const [salvando, setSalvando] = useState(false);
+  const selectRef = useRef();
+
+  useEffect(() => { if (editando && selectRef.current) selectRef.current.focus(); }, [editando]);
+
+  async function salvar(novo) {
+    if (novo === gasto.tipo) { setEditando(false); return; }
+    setSalvando(true);
+    await supabase.from("gastos").update({ tipo: novo }).eq("id", gasto.id);
+    onUpdate(gasto.id, "tipo", novo);
+    setSalvando(false);
+    setEditando(false);
+  }
+
+  if (editando) {
+    return (
+      <select ref={selectRef} defaultValue={gasto.tipo}
+        onChange={e => salvar(e.target.value)}
+        onBlur={() => setEditando(false)}
+        className="text-[10px] px-1.5 py-0.5 rounded border border-[#6c5fff] bg-[#1a1a28] text-[#e8e8f0] outline-none cursor-pointer">
+        <option value="fixa">Fixa</option>
+        <option value="variavel">Variável</option>
+      </select>
+    );
+  }
+
+  return (
+    <span onClick={() => setEditando(true)} title="Clique para editar"
+      className={`text-[10px] px-1.5 py-0.5 rounded w-fit cursor-pointer hover:opacity-70 transition-opacity
+        ${gasto.tipo === "fixa" ? "bg-orange-400/10 text-orange-400" : "bg-violet-400/10 text-violet-400"}`}>
+      {salvando ? "..." : gasto.tipo === "fixa" ? "Fixa" : "Var."}
     </span>
   );
 }
@@ -105,9 +139,8 @@ export default function Gastos() {
     setGastos(g => g.filter(x => x.id !== id));
   }
 
-  // Atualiza categoria localmente sem recarregar tudo
-  function atualizarCategoria(id, novacat) {
-    setGastos(g => g.map(x => x.id === id ? { ...x, categoria: novacat } : x));
+  function atualizarCampo(id, campo, valor) {
+    setGastos(g => g.map(x => x.id === id ? { ...x, [campo]: valor } : x));
   }
 
   async function analisarExtrato(file) {
@@ -249,10 +282,8 @@ export default function Gastos() {
           </div>
         </div>
 
-        {/* Dica */}
-        <div className="text-[10px] text-[#4a4a6a] mb-3">💡 Clique na categoria para editar</div>
+        <div className="text-[10px] text-[#4a4a6a] mb-3">💡 Clique na categoria ou tipo para editar</div>
 
-        {/* Tabela desktop */}
         {loading ? (
           <div className="text-center text-[#4a4a6a] py-10 text-sm">Carregando...</div>
         ) : (
@@ -265,10 +296,9 @@ export default function Gastos() {
             {filtrados.length === 0 ? (
               <div className="text-center text-[#4a4a6a] py-10 text-sm">Nenhum gasto encontrado ✨</div>
             ) : filtrados.map((g, i) => (
-              <>
+              <div key={g.id}>
                 {/* Desktop */}
-                <div key={g.id}
-                  className={`hidden md:grid items-center px-4 py-3 hover:bg-[#1a1a28] transition-colors gap-2 ${i < filtrados.length - 1 ? "border-b border-[#1a1a24]" : ""}`}
+                <div className={`hidden md:grid items-center px-4 py-3 hover:bg-[#1a1a28] transition-colors gap-2 ${i < filtrados.length - 1 ? "border-b border-[#1a1a24]" : ""}`}
                   style={{ gridTemplateColumns: "60px 1fr 95px 110px 90px 60px 24px" }}>
                   <span className="font-mono text-xs text-[#6a6a8a]">{g.data}</span>
                   <span className="text-[#d8d8f0] font-medium truncate pr-1 text-sm">{g.descricao}</span>
@@ -276,16 +306,13 @@ export default function Gastos() {
                   <span className="text-xs text-[#8a8aaa] truncate">
                     {g.meio_pagamento === "Nubank" ? "💜 Nubank" : "🟡 Mercado Pago"}
                   </span>
-                  <CatCell gasto={g} onUpdate={atualizarCategoria} />
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded w-fit ${g.tipo === "fixa" ? "bg-orange-400/10 text-orange-400" : "bg-violet-400/10 text-violet-400"}`}>
-                    {g.tipo === "fixa" ? "Fixa" : "Var."}
-                  </span>
+                  <CatCell gasto={g} onUpdate={atualizarCampo} />
+                  <TipoCell gasto={g} onUpdate={atualizarCampo} />
                   <button onClick={() => excluir(g.id)} className="text-[#3a3a50] hover:text-red-400 transition-colors text-xs">✕</button>
                 </div>
 
                 {/* Mobile */}
-                <div key={`m-${g.id}`}
-                  className={`md:hidden px-4 py-3 flex gap-3 items-start hover:bg-[#1a1a28] transition-colors ${i < filtrados.length - 1 ? "border-b border-[#1a1a24]" : ""}`}>
+                <div className={`md:hidden px-4 py-3 flex gap-3 items-start hover:bg-[#1a1a28] transition-colors ${i < filtrados.length - 1 ? "border-b border-[#1a1a24]" : ""}`}>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-sm font-medium text-[#d8d8f0] truncate">{g.descricao}</span>
@@ -294,15 +321,13 @@ export default function Gastos() {
                     <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                       <span className="font-mono text-[10px] text-[#6a6a8a]">{g.data}</span>
                       <span className="text-[10px] text-[#8a8aaa]">{g.meio_pagamento === "Nubank" ? "💜" : "🟡"} {g.meio_pagamento}</span>
-                      <CatCell gasto={g} onUpdate={atualizarCategoria} />
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${g.tipo === "fixa" ? "bg-orange-400/10 text-orange-400" : "bg-violet-400/10 text-violet-400"}`}>
-                        {g.tipo === "fixa" ? "Fixa" : "Variável"}
-                      </span>
+                      <CatCell gasto={g} onUpdate={atualizarCampo} />
+                      <TipoCell gasto={g} onUpdate={atualizarCampo} />
                     </div>
                   </div>
                   <button onClick={() => excluir(g.id)} className="text-[#3a3a50] hover:text-red-400 transition-colors text-xs mt-1">✕</button>
                 </div>
-              </>
+              </div>
             ))}
 
             {filtrados.length > 0 && (
