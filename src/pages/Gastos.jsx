@@ -13,12 +13,58 @@ const CORES_CAT = {
   "Saúde": "#4ade80", "Outros": "#94a3b8",
 };
 
-// Abreviações para categorias longas na tabela
 const CAT_ABREV = {
   "Dívidas/Empréstimo": "Dívidas",
   "Cuidados Pessoais": "Cuidados",
   "Cartão/Fatura": "Cartão",
 };
+
+const TODAS_CATS = [
+  "Alimentação", "Assinaturas", "Cartão/Fatura", "Cuidados Pessoais",
+  "Dívidas/Empréstimo", "Outros", "Presentes", "Relacionamento", "Saúde", "Transporte"
+];
+
+// ── Célula de categoria editável ──────────────────────────────────
+function CatCell({ gasto, onUpdate }) {
+  const [editando, setEditando] = useState(false);
+  const [salvando, setSalvando] = useState(false);
+  const selectRef = useRef();
+
+  useEffect(() => {
+    if (editando && selectRef.current) selectRef.current.focus();
+  }, [editando]);
+
+  async function salvar(novacat) {
+    if (novacat === gasto.categoria) { setEditando(false); return; }
+    setSalvando(true);
+    await supabase.from("gastos").update({ categoria: novacat }).eq("id", gasto.id);
+    onUpdate(gasto.id, novacat);
+    setSalvando(false);
+    setEditando(false);
+  }
+
+  if (editando) {
+    return (
+      <select ref={selectRef} defaultValue={gasto.categoria}
+        onChange={e => salvar(e.target.value)}
+        onBlur={() => setEditando(false)}
+        className="text-[10px] px-1.5 py-0.5 rounded border border-[#6c5fff] bg-[#1a1a28] text-[#e8e8f0] outline-none w-full cursor-pointer"
+        style={{ maxWidth: 90 }}>
+        {TODAS_CATS.map(c => <option key={c} value={c}>{c}</option>)}
+      </select>
+    );
+  }
+
+  return (
+    <span
+      onClick={() => setEditando(true)}
+      title={`${gasto.categoria} — clique para editar`}
+      className="text-[10px] px-1.5 py-0.5 rounded w-fit max-w-full truncate cursor-pointer hover:opacity-70 transition-opacity"
+      style={{ background: `${CORES_CAT[gasto.categoria] || "#6c5fff"}20`, color: CORES_CAT[gasto.categoria] || "#6c5fff" }}>
+      {salvando ? "..." : (CAT_ABREV[gasto.categoria] || gasto.categoria)}
+    </span>
+  );
+}
 
 export default function Gastos() {
   const [gastos, setGastos] = useState([]);
@@ -29,7 +75,6 @@ export default function Gastos() {
   const [mesSel, setMesSel] = useState("");
   const [mesesDisponiveis, setMesesDisponiveis] = useState([]);
 
-  // Extrato
   const [modalExtrato, setModalExtrato] = useState(false);
   const [extratoLoading, setExtratoLoading] = useState(false);
   const [extratoResultado, setExtratoResultado] = useState(null);
@@ -57,7 +102,12 @@ export default function Gastos() {
 
   async function excluir(id) {
     await supabase.from("gastos").delete().eq("id", id);
-    carregar();
+    setGastos(g => g.filter(x => x.id !== id));
+  }
+
+  // Atualiza categoria localmente sem recarregar tudo
+  function atualizarCategoria(id, novacat) {
+    setGastos(g => g.map(x => x.id === id ? { ...x, categoria: novacat } : x));
   }
 
   async function analisarExtrato(file) {
@@ -102,7 +152,7 @@ export default function Gastos() {
       if (data.erro) throw new Error(data.erro);
       setModalExtrato(false);
       setExtratoResultado(null);
-      await carregarMeses();
+      await carregar();
       alert(`✅ ${data.adicionados} gastos adicionados com sucesso!`);
     } catch (err) {
       alert("Erro ao confirmar: " + err.message);
@@ -110,7 +160,6 @@ export default function Gastos() {
     setConfirmando(false);
   }
 
-  // Listas únicas para filtros
   const categorias = ["Todas", ...new Set(gastos.map(g => g.categoria).filter(Boolean))].sort();
   const meios = ["Todos", ...new Set(gastos.map(g => g.meio_pagamento).filter(Boolean))];
 
@@ -176,15 +225,12 @@ export default function Gastos() {
 
         {/* Filtros */}
         <div className="flex flex-col gap-2 mb-4">
-          {/* Tipo */}
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[10px] text-[#4a4a6a] tracking-wider w-16">TIPO</span>
             {["Todos","Fixa","Variável"].map(f => (
               <FiltroBtn key={f} ativo={tipoFiltro === f} onClick={() => setTipoFiltro(f)}>{f}</FiltroBtn>
             ))}
           </div>
-
-          {/* Categoria */}
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[10px] text-[#4a4a6a] tracking-wider w-16">CATEGORIA</span>
             {categorias.map(c => (
@@ -193,8 +239,6 @@ export default function Gastos() {
               </FiltroBtn>
             ))}
           </div>
-
-          {/* Meio de pagamento */}
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[10px] text-[#4a4a6a] tracking-wider w-16">PAGAMENTO</span>
             {meios.map(m => (
@@ -205,12 +249,14 @@ export default function Gastos() {
           </div>
         </div>
 
-        {/* Tabela */}
+        {/* Dica */}
+        <div className="text-[10px] text-[#4a4a6a] mb-3">💡 Clique na categoria para editar</div>
+
+        {/* Tabela desktop */}
         {loading ? (
           <div className="text-center text-[#4a4a6a] py-10 text-sm">Carregando...</div>
         ) : (
           <div className="bg-[#13131e] border border-[#1e1e2e] rounded-xl overflow-hidden">
-            {/* Cabeçalho */}
             <div className="hidden md:grid px-4 py-2.5 border-b border-[#1e1e2e] text-[10px] text-[#4a4a6a] tracking-wider"
               style={{ gridTemplateColumns: "60px 1fr 95px 110px 90px 60px 24px" }}>
               <span>DATA</span><span>DESCRIÇÃO</span><span>VALOR</span><span>PAGAMENTO</span><span>CATEGORIA</span><span>TIPO</span><span />
@@ -219,57 +265,49 @@ export default function Gastos() {
             {filtrados.length === 0 ? (
               <div className="text-center text-[#4a4a6a] py-10 text-sm">Nenhum gasto encontrado ✨</div>
             ) : filtrados.map((g, i) => (
-              <div key={g.id}
-                className={`px-4 py-3 hover:bg-[#1a1a28] transition-colors ${i < filtrados.length - 1 ? "border-b border-[#1a1a24]" : ""}
-                  hidden md:grid items-center gap-2`}
-                style={{ gridTemplateColumns: "60px 1fr 95px 110px 90px 60px 24px" }}>
-                <span className="font-mono text-xs text-[#6a6a8a]">{g.data}</span>
-                <span className="text-[#d8d8f0] font-medium truncate pr-1 text-sm">{g.descricao}</span>
-                <span className="font-mono text-xs text-red-400 font-semibold">{fmt(g.valor)}</span>
-                <span className="text-xs text-[#8a8aaa] truncate">
-                  {g.meio_pagamento === "Nubank" ? "💜 Nubank" : "🟡 Mercado Pago"}
-                </span>
-                {/* Categoria — badge com abreviação */}
-                <span className="text-[10px] px-1.5 py-0.5 rounded w-fit max-w-full truncate"
-                  style={{ background: `${CORES_CAT[g.categoria] || "#6c5fff"}20`, color: CORES_CAT[g.categoria] || "#6c5fff" }}
-                  title={g.categoria}>
-                  {CAT_ABREV[g.categoria] || g.categoria}
-                </span>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded w-fit ${g.tipo === "fixa" ? "bg-orange-400/10 text-orange-400" : "bg-violet-400/10 text-violet-400"}`}>
-                  {g.tipo === "fixa" ? "Fixa" : "Var."}
-                </span>
-                <button onClick={() => excluir(g.id)} className="text-[#3a3a50] hover:text-red-400 transition-colors text-xs">✕</button>
-              </div>
-            ))}
-
-            {/* Mobile cards */}
-            {filtrados.map((g, i) => (
-              <div key={`m-${g.id}`}
-                className={`md:hidden px-4 py-3 flex gap-3 items-start hover:bg-[#1a1a28] transition-colors ${i < filtrados.length - 1 ? "border-b border-[#1a1a24]" : ""}`}>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium text-[#d8d8f0] truncate">{g.descricao}</span>
-                    <span className="font-mono text-sm text-red-400 font-semibold shrink-0">{fmt(g.valor)}</span>
-                  </div>
-                  <div className="flex items-center gap-2 mt-1 flex-wrap">
-                    <span className="font-mono text-[10px] text-[#6a6a8a]">{g.data}</span>
-                    <span className="text-[10px] text-[#8a8aaa]">{g.meio_pagamento === "Nubank" ? "💜" : "🟡"} {g.meio_pagamento}</span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded"
-                      style={{ background: `${CORES_CAT[g.categoria] || "#6c5fff"}20`, color: CORES_CAT[g.categoria] || "#6c5fff" }}>
-                      {CAT_ABREV[g.categoria] || g.categoria}
-                    </span>
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${g.tipo === "fixa" ? "bg-orange-400/10 text-orange-400" : "bg-violet-400/10 text-violet-400"}`}>
-                      {g.tipo === "fixa" ? "Fixa" : "Variável"}
-                    </span>
-                  </div>
+              <>
+                {/* Desktop */}
+                <div key={g.id}
+                  className={`hidden md:grid items-center px-4 py-3 hover:bg-[#1a1a28] transition-colors gap-2 ${i < filtrados.length - 1 ? "border-b border-[#1a1a24]" : ""}`}
+                  style={{ gridTemplateColumns: "60px 1fr 95px 110px 90px 60px 24px" }}>
+                  <span className="font-mono text-xs text-[#6a6a8a]">{g.data}</span>
+                  <span className="text-[#d8d8f0] font-medium truncate pr-1 text-sm">{g.descricao}</span>
+                  <span className="font-mono text-xs text-red-400 font-semibold">{fmt(g.valor)}</span>
+                  <span className="text-xs text-[#8a8aaa] truncate">
+                    {g.meio_pagamento === "Nubank" ? "💜 Nubank" : "🟡 Mercado Pago"}
+                  </span>
+                  <CatCell gasto={g} onUpdate={atualizarCategoria} />
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded w-fit ${g.tipo === "fixa" ? "bg-orange-400/10 text-orange-400" : "bg-violet-400/10 text-violet-400"}`}>
+                    {g.tipo === "fixa" ? "Fixa" : "Var."}
+                  </span>
+                  <button onClick={() => excluir(g.id)} className="text-[#3a3a50] hover:text-red-400 transition-colors text-xs">✕</button>
                 </div>
-                <button onClick={() => excluir(g.id)} className="text-[#3a3a50] hover:text-red-400 transition-colors text-xs mt-1">✕</button>
-              </div>
+
+                {/* Mobile */}
+                <div key={`m-${g.id}`}
+                  className={`md:hidden px-4 py-3 flex gap-3 items-start hover:bg-[#1a1a28] transition-colors ${i < filtrados.length - 1 ? "border-b border-[#1a1a24]" : ""}`}>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium text-[#d8d8f0] truncate">{g.descricao}</span>
+                      <span className="font-mono text-sm text-red-400 font-semibold shrink-0">{fmt(g.valor)}</span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                      <span className="font-mono text-[10px] text-[#6a6a8a]">{g.data}</span>
+                      <span className="text-[10px] text-[#8a8aaa]">{g.meio_pagamento === "Nubank" ? "💜" : "🟡"} {g.meio_pagamento}</span>
+                      <CatCell gasto={g} onUpdate={atualizarCategoria} />
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${g.tipo === "fixa" ? "bg-orange-400/10 text-orange-400" : "bg-violet-400/10 text-violet-400"}`}>
+                        {g.tipo === "fixa" ? "Fixa" : "Variável"}
+                      </span>
+                    </div>
+                  </div>
+                  <button onClick={() => excluir(g.id)} className="text-[#3a3a50] hover:text-red-400 transition-colors text-xs mt-1">✕</button>
+                </div>
+              </>
             ))}
 
             {filtrados.length > 0 && (
               <div className="px-4 py-3 border-t border-[#2a2a3e] flex justify-between items-center">
-                <span className="text-xs text-[#4a4a6a]">{filtrados.length} itens filtrados</span>
+                <span className="text-xs text-[#4a4a6a]">{filtrados.length} itens</span>
                 <span className="font-mono text-sm font-semibold text-red-400">{fmt(total)}</span>
               </div>
             )}
@@ -305,9 +343,7 @@ export default function Gastos() {
                     <div className="flex flex-col items-center gap-3">
                       <span className="text-4xl">📤</span>
                       <div>
-                        <div className="text-sm font-medium text-[#c8c8e0] group-hover:text-[#a78bfa] transition-colors">
-                          Clique para selecionar o arquivo
-                        </div>
+                        <div className="text-sm font-medium text-[#c8c8e0] group-hover:text-[#a78bfa] transition-colors">Clique para selecionar o arquivo</div>
                         <div className="text-xs text-[#4a4a6a] mt-1">PDF ou imagem · Nubank ou Mercado Pago</div>
                       </div>
                     </div>
@@ -333,15 +369,13 @@ export default function Gastos() {
                           <div key={i} onClick={() => setSelecionadas(s => ({ ...s, [i]: !s[i] }))}
                             className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all
                               ${selecionadas[i] ? "border-[#6c5fff] bg-[#6c5fff10]" : "border-[#1e1e2e] hover:border-[#3a3a50]"}`}>
-                            <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-all
+                            <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0
                               ${selecionadas[i] ? "border-[#6c5fff] bg-[#6c5fff]" : "border-[#3a3a50]"}`}>
                               {selecionadas[i] && <span className="text-[10px] text-white font-bold">✓</span>}
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="text-sm font-medium text-[#d8d8f0] truncate">{t.descricao}</div>
-                              <div className="text-xs text-[#6a6a8a] mt-0.5">
-                                {t.data} · {t.meio_pagamento === "Nubank" ? "💜" : "🟡"} {t.meio_pagamento}
-                              </div>
+                              <div className="text-xs text-[#6a6a8a] mt-0.5">{t.data} · {t.meio_pagamento === "Nubank" ? "💜" : "🟡"} {t.meio_pagamento}</div>
                             </div>
                             <div className="text-right shrink-0">
                               <div className="font-mono text-sm text-red-400 font-semibold">{fmt(t.valor)}</div>
@@ -357,9 +391,7 @@ export default function Gastos() {
                   )}
                   {extratoResultado.duplicatas.length > 0 && (
                     <div>
-                      <div className="text-xs text-[#4a4a6a] tracking-wider mb-3">
-                        ⚠️ {extratoResultado.duplicatas.length} POSSÍVEIS DUPLICATAS
-                      </div>
+                      <div className="text-xs text-[#4a4a6a] tracking-wider mb-3">⚠️ {extratoResultado.duplicatas.length} POSSÍVEIS DUPLICATAS</div>
                       <div className="flex flex-col gap-2">
                         {extratoResultado.duplicatas.map((t, i) => (
                           <div key={i} className="flex items-center gap-3 p-3 rounded-xl border border-[#1e1e2e] opacity-50">
