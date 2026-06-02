@@ -13,17 +13,26 @@ const CORES_CAT = {
   "Saúde": "#4ade80", "Outros": "#94a3b8",
 };
 
+// Abreviações para categorias longas na tabela
+const CAT_ABREV = {
+  "Dívidas/Empréstimo": "Dívidas",
+  "Cuidados Pessoais": "Cuidados",
+  "Cartão/Fatura": "Cartão",
+};
+
 export default function Gastos() {
   const [gastos, setGastos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tipoFiltro, setTipoFiltro] = useState("Todos");
+  const [catFiltro, setCatFiltro] = useState("Todas");
+  const [meioFiltro, setMeioFiltro] = useState("Todos");
   const [mesSel, setMesSel] = useState("");
   const [mesesDisponiveis, setMesesDisponiveis] = useState([]);
 
   // Extrato
   const [modalExtrato, setModalExtrato] = useState(false);
   const [extratoLoading, setExtratoLoading] = useState(false);
-  const [extratoResultado, setExtratoResultado] = useState(null); // { novas, duplicatas }
+  const [extratoResultado, setExtratoResultado] = useState(null);
   const [selecionadas, setSelecionadas] = useState({});
   const [confirmando, setConfirmando] = useState(false);
   const fileRef = useRef();
@@ -51,11 +60,9 @@ export default function Gastos() {
     carregar();
   }
 
-  // ── Upload de extrato ─────────────────────────────────────────
   async function analisarExtrato(file) {
     setExtratoLoading(true);
     setExtratoResultado(null);
-
     try {
       const base64 = await new Promise((res, rej) => {
         const reader = new FileReader();
@@ -63,19 +70,14 @@ export default function Gastos() {
         reader.onerror = rej;
         reader.readAsDataURL(file);
       });
-
       const response = await fetch(`${JARVIS_URL}/api/extrato/analisar`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ base64, mimetype: file.type }),
       });
-
       const data = await response.json();
       if (data.erro) throw new Error(data.erro);
-
       setExtratoResultado(data);
-
-      // Marca todas as novas como selecionadas por padrão
       const sel = {};
       data.novas.forEach((_, i) => { sel[i] = true; });
       setSelecionadas(sel);
@@ -88,14 +90,8 @@ export default function Gastos() {
   async function confirmarExtrato() {
     if (!extratoResultado) return;
     setConfirmando(true);
-
     const paraAdicionar = extratoResultado.novas.filter((_, i) => selecionadas[i]);
-    if (paraAdicionar.length === 0) {
-      alert("Selecione pelo menos uma transação.");
-      setConfirmando(false);
-      return;
-    }
-
+    if (paraAdicionar.length === 0) { alert("Selecione pelo menos uma transação."); setConfirmando(false); return; }
     try {
       const response = await fetch(`${JARVIS_URL}/api/extrato/confirmar`, {
         method: "POST",
@@ -104,7 +100,6 @@ export default function Gastos() {
       });
       const data = await response.json();
       if (data.erro) throw new Error(data.erro);
-
       setModalExtrato(false);
       setExtratoResultado(null);
       await carregarMeses();
@@ -115,15 +110,29 @@ export default function Gastos() {
     setConfirmando(false);
   }
 
+  // Listas únicas para filtros
+  const categorias = ["Todas", ...new Set(gastos.map(g => g.categoria).filter(Boolean))].sort();
+  const meios = ["Todos", ...new Set(gastos.map(g => g.meio_pagamento).filter(Boolean))];
+
   const filtrados = gastos.filter(g => {
-    if (tipoFiltro === "Fixa") return g.tipo === "fixa";
-    if (tipoFiltro === "Variável") return g.tipo === "variavel";
+    if (tipoFiltro === "Fixa" && g.tipo !== "fixa") return false;
+    if (tipoFiltro === "Variável" && g.tipo !== "variavel") return false;
+    if (catFiltro !== "Todas" && g.categoria !== catFiltro) return false;
+    if (meioFiltro !== "Todos" && g.meio_pagamento !== meioFiltro) return false;
     return true;
   });
 
   const total = filtrados.reduce((s, g) => s + Number(g.valor || 0), 0);
   const fixas = gastos.filter(g => g.tipo === "fixa").reduce((s, g) => s + Number(g.valor || 0), 0);
   const variaveis = gastos.filter(g => g.tipo === "variavel").reduce((s, g) => s + Number(g.valor || 0), 0);
+
+  const FiltroBtn = ({ ativo, onClick, children }) => (
+    <button onClick={onClick}
+      className={`px-3 py-1 rounded-full text-xs border transition-all whitespace-nowrap
+        ${ativo ? "border-[#6c5fff] bg-[#6c5fff22] text-[#a78bfa]" : "border-[#2a2a3e] text-[#6a6a8a] hover:border-[#3a3a50]"}`}>
+      {children}
+    </button>
+  );
 
   return (
     <div className="flex flex-col h-full">
@@ -135,17 +144,13 @@ export default function Gastos() {
             <div className="text-xs text-[#4a4a6a] mt-0.5">{filtrados.length} lançamentos · {mesSel}</div>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
-            {/* Seletor de mês */}
-            <div className="flex gap-2 flex-wrap">
-              {mesesDisponiveis.map(m => (
-                <button key={m} onClick={() => setMesSel(m)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all
-                    ${mesSel === m ? "border-[#6c5fff] bg-[#6c5fff22] text-[#a78bfa]" : "border-[#2a2a3e] text-[#6a6a8a] hover:border-[#3a3a50]"}`}>
-                  {m}
-                </button>
-              ))}
-            </div>
-            {/* Botão importar extrato */}
+            {mesesDisponiveis.map(m => (
+              <button key={m} onClick={() => setMesSel(m)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all
+                  ${mesSel === m ? "border-[#6c5fff] bg-[#6c5fff22] text-[#a78bfa]" : "border-[#2a2a3e] text-[#6a6a8a] hover:border-[#3a3a50]"}`}>
+                {m}
+              </button>
+            ))}
             <button onClick={() => setModalExtrato(true)}
               className="flex items-center gap-2 px-4 py-1.5 bg-[#6c5fff] hover:bg-[#7c6fff] rounded-lg text-xs font-semibold text-white transition-colors">
               📤 Importar extrato
@@ -169,16 +174,35 @@ export default function Gastos() {
           ))}
         </div>
 
-        {/* Filtros tipo */}
-        <div className="flex items-center gap-2 mb-4">
-          <span className="text-[10px] text-[#4a4a6a] tracking-wider">TIPO</span>
-          {["Todos","Fixa","Variável"].map(f => (
-            <button key={f} onClick={() => setTipoFiltro(f)}
-              className={`px-3 py-1 rounded-full text-xs border transition-all
-                ${tipoFiltro === f ? "border-[#6c5fff] bg-[#6c5fff22] text-[#a78bfa]" : "border-[#2a2a3e] text-[#6a6a8a] hover:border-[#3a3a50]"}`}>
-              {f}
-            </button>
-          ))}
+        {/* Filtros */}
+        <div className="flex flex-col gap-2 mb-4">
+          {/* Tipo */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[10px] text-[#4a4a6a] tracking-wider w-16">TIPO</span>
+            {["Todos","Fixa","Variável"].map(f => (
+              <FiltroBtn key={f} ativo={tipoFiltro === f} onClick={() => setTipoFiltro(f)}>{f}</FiltroBtn>
+            ))}
+          </div>
+
+          {/* Categoria */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[10px] text-[#4a4a6a] tracking-wider w-16">CATEGORIA</span>
+            {categorias.map(c => (
+              <FiltroBtn key={c} ativo={catFiltro === c} onClick={() => setCatFiltro(c)}>
+                {c !== "Todas" ? (CAT_ABREV[c] || c) : c}
+              </FiltroBtn>
+            ))}
+          </div>
+
+          {/* Meio de pagamento */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[10px] text-[#4a4a6a] tracking-wider w-16">PAGAMENTO</span>
+            {meios.map(m => (
+              <FiltroBtn key={m} ativo={meioFiltro === m} onClick={() => setMeioFiltro(m)}>
+                {m === "Nubank" ? "💜 Nubank" : m === "Mercado Pago" ? "🟡 Mercado Pago" : m}
+              </FiltroBtn>
+            ))}
+          </div>
         </div>
 
         {/* Tabela */}
@@ -186,32 +210,66 @@ export default function Gastos() {
           <div className="text-center text-[#4a4a6a] py-10 text-sm">Carregando...</div>
         ) : (
           <div className="bg-[#13131e] border border-[#1e1e2e] rounded-xl overflow-hidden">
-            <div className="grid gap-0 px-4 py-2.5 border-b border-[#1e1e2e] text-[10px] text-[#4a4a6a] tracking-wider"
-              style={{ gridTemplateColumns: "70px 1fr 110px 130px 110px 80px 30px" }}>
+            {/* Cabeçalho */}
+            <div className="hidden md:grid px-4 py-2.5 border-b border-[#1e1e2e] text-[10px] text-[#4a4a6a] tracking-wider"
+              style={{ gridTemplateColumns: "60px 1fr 95px 110px 90px 60px 24px" }}>
               <span>DATA</span><span>DESCRIÇÃO</span><span>VALOR</span><span>PAGAMENTO</span><span>CATEGORIA</span><span>TIPO</span><span />
             </div>
+
             {filtrados.length === 0 ? (
               <div className="text-center text-[#4a4a6a] py-10 text-sm">Nenhum gasto encontrado ✨</div>
             ) : filtrados.map((g, i) => (
               <div key={g.id}
-                className={`grid items-center px-4 py-3 text-sm hover:bg-[#1a1a28] transition-colors ${i < filtrados.length - 1 ? "border-b border-[#1a1a24]" : ""}`}
-                style={{ gridTemplateColumns: "70px 1fr 110px 130px 110px 80px 30px" }}>
+                className={`px-4 py-3 hover:bg-[#1a1a28] transition-colors ${i < filtrados.length - 1 ? "border-b border-[#1a1a24]" : ""}
+                  hidden md:grid items-center gap-2`}
+                style={{ gridTemplateColumns: "60px 1fr 95px 110px 90px 60px 24px" }}>
                 <span className="font-mono text-xs text-[#6a6a8a]">{g.data}</span>
-                <span className="text-[#d8d8f0] font-medium truncate pr-2">{g.descricao}</span>
-                <span className="font-mono text-red-400 font-semibold">{fmt(g.valor)}</span>
-                <span className="text-xs text-[#8a8aaa]">{g.meio_pagamento === "Nubank" ? "💜 Nubank" : "🟡 Mercado Pago"}</span>
-                <span className="text-xs px-2 py-0.5 rounded w-fit"
-                  style={{ background: `${CORES_CAT[g.categoria] || "#6c5fff"}20`, color: CORES_CAT[g.categoria] || "#6c5fff" }}>
-                  {g.categoria}
+                <span className="text-[#d8d8f0] font-medium truncate pr-1 text-sm">{g.descricao}</span>
+                <span className="font-mono text-xs text-red-400 font-semibold">{fmt(g.valor)}</span>
+                <span className="text-xs text-[#8a8aaa] truncate">
+                  {g.meio_pagamento === "Nubank" ? "💜 Nubank" : "🟡 Mercado Pago"}
                 </span>
-                <span className={`text-xs px-2 py-0.5 rounded w-fit ${g.tipo === "fixa" ? "bg-orange-400/10 text-orange-400" : "bg-violet-400/10 text-violet-400"}`}>
-                  {g.tipo === "fixa" ? "Fixa" : "Variável"}
+                {/* Categoria — badge com abreviação */}
+                <span className="text-[10px] px-1.5 py-0.5 rounded w-fit max-w-full truncate"
+                  style={{ background: `${CORES_CAT[g.categoria] || "#6c5fff"}20`, color: CORES_CAT[g.categoria] || "#6c5fff" }}
+                  title={g.categoria}>
+                  {CAT_ABREV[g.categoria] || g.categoria}
                 </span>
-                <button onClick={() => excluir(g.id)} className="text-[#3a3a50] hover:text-red-400 transition-colors text-sm">✕</button>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded w-fit ${g.tipo === "fixa" ? "bg-orange-400/10 text-orange-400" : "bg-violet-400/10 text-violet-400"}`}>
+                  {g.tipo === "fixa" ? "Fixa" : "Var."}
+                </span>
+                <button onClick={() => excluir(g.id)} className="text-[#3a3a50] hover:text-red-400 transition-colors text-xs">✕</button>
               </div>
             ))}
+
+            {/* Mobile cards */}
+            {filtrados.map((g, i) => (
+              <div key={`m-${g.id}`}
+                className={`md:hidden px-4 py-3 flex gap-3 items-start hover:bg-[#1a1a28] transition-colors ${i < filtrados.length - 1 ? "border-b border-[#1a1a24]" : ""}`}>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium text-[#d8d8f0] truncate">{g.descricao}</span>
+                    <span className="font-mono text-sm text-red-400 font-semibold shrink-0">{fmt(g.valor)}</span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    <span className="font-mono text-[10px] text-[#6a6a8a]">{g.data}</span>
+                    <span className="text-[10px] text-[#8a8aaa]">{g.meio_pagamento === "Nubank" ? "💜" : "🟡"} {g.meio_pagamento}</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded"
+                      style={{ background: `${CORES_CAT[g.categoria] || "#6c5fff"}20`, color: CORES_CAT[g.categoria] || "#6c5fff" }}>
+                      {CAT_ABREV[g.categoria] || g.categoria}
+                    </span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${g.tipo === "fixa" ? "bg-orange-400/10 text-orange-400" : "bg-violet-400/10 text-violet-400"}`}>
+                      {g.tipo === "fixa" ? "Fixa" : "Variável"}
+                    </span>
+                  </div>
+                </div>
+                <button onClick={() => excluir(g.id)} className="text-[#3a3a50] hover:text-red-400 transition-colors text-xs mt-1">✕</button>
+              </div>
+            ))}
+
             {filtrados.length > 0 && (
-              <div className="px-4 py-3 border-t border-[#2a2a3e] flex justify-end">
+              <div className="px-4 py-3 border-t border-[#2a2a3e] flex justify-between items-center">
+                <span className="text-xs text-[#4a4a6a]">{filtrados.length} itens filtrados</span>
                 <span className="font-mono text-sm font-semibold text-red-400">{fmt(total)}</span>
               </div>
             )}
@@ -219,11 +277,10 @@ export default function Gastos() {
         )}
       </div>
 
-      {/* ── Modal de extrato ────────────────────────────────────── */}
+      {/* Modal extrato */}
       {modalExtrato && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-[#12121a] border border-[#2a2a3e] rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
-            {/* Header modal */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-[#1e1e2e]">
               <div>
                 <div className="font-semibold">Importar Extrato</div>
@@ -235,9 +292,7 @@ export default function Gastos() {
 
             <div className="flex-1 overflow-y-auto px-6 py-5">
               {!extratoResultado ? (
-                /* Upload */
-                <div
-                  onClick={() => fileRef.current?.click()}
+                <div onClick={() => fileRef.current?.click()}
                   className="border-2 border-dashed border-[#2a2a3e] hover:border-[#6c5fff] rounded-xl p-10 text-center cursor-pointer transition-all group">
                   <input ref={fileRef} type="file" accept=".pdf,image/*" className="hidden"
                     onChange={e => e.target.files[0] && analisarExtrato(e.target.files[0])} />
@@ -253,36 +308,29 @@ export default function Gastos() {
                         <div className="text-sm font-medium text-[#c8c8e0] group-hover:text-[#a78bfa] transition-colors">
                           Clique para selecionar o arquivo
                         </div>
-                        <div className="text-xs text-[#4a4a6a] mt-1">PDF ou imagem (JPG, PNG) · Nubank ou Mercado Pago</div>
+                        <div className="text-xs text-[#4a4a6a] mt-1">PDF ou imagem · Nubank ou Mercado Pago</div>
                       </div>
                     </div>
                   )}
                 </div>
               ) : (
-                /* Resultado */
                 <div className="flex flex-col gap-4">
-                  {/* Novas transações */}
                   {extratoResultado.novas.length > 0 && (
                     <div>
                       <div className="flex items-center justify-between mb-3">
-                        <div className="text-xs text-[#4a4a6a] tracking-wider">
-                          ✅ {extratoResultado.novas.length} NOVAS TRANSAÇÕES
-                        </div>
-                        <button
-                          onClick={() => {
-                            const allSel = Object.values(selecionadas).every(v => v);
-                            const novo = {};
-                            extratoResultado.novas.forEach((_, i) => { novo[i] = !allSel; });
-                            setSelecionadas(novo);
-                          }}
-                          className="text-xs text-[#6c5fff] hover:text-[#a78bfa]">
+                        <div className="text-xs text-[#4a4a6a] tracking-wider">✅ {extratoResultado.novas.length} NOVAS TRANSAÇÕES</div>
+                        <button onClick={() => {
+                          const allSel = Object.values(selecionadas).every(v => v);
+                          const novo = {};
+                          extratoResultado.novas.forEach((_, i) => { novo[i] = !allSel; });
+                          setSelecionadas(novo);
+                        }} className="text-xs text-[#6c5fff] hover:text-[#a78bfa]">
                           {Object.values(selecionadas).every(v => v) ? "Desmarcar todas" : "Selecionar todas"}
                         </button>
                       </div>
                       <div className="flex flex-col gap-2">
                         {extratoResultado.novas.map((t, i) => (
-                          <div key={i}
-                            onClick={() => setSelecionadas(s => ({ ...s, [i]: !s[i] }))}
+                          <div key={i} onClick={() => setSelecionadas(s => ({ ...s, [i]: !s[i] }))}
                             className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all
                               ${selecionadas[i] ? "border-[#6c5fff] bg-[#6c5fff10]" : "border-[#1e1e2e] hover:border-[#3a3a50]"}`}>
                             <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-all
@@ -297,7 +345,7 @@ export default function Gastos() {
                             </div>
                             <div className="text-right shrink-0">
                               <div className="font-mono text-sm text-red-400 font-semibold">{fmt(t.valor)}</div>
-                              <div className="text-xs px-2 py-0.5 rounded mt-1"
+                              <div className="text-[10px] px-1.5 py-0.5 rounded mt-1"
                                 style={{ background: `${CORES_CAT[t.categoria] || "#6c5fff"}20`, color: CORES_CAT[t.categoria] || "#6c5fff" }}>
                                 {t.categoria}
                               </div>
@@ -307,12 +355,10 @@ export default function Gastos() {
                       </div>
                     </div>
                   )}
-
-                  {/* Duplicatas */}
                   {extratoResultado.duplicatas.length > 0 && (
                     <div>
                       <div className="text-xs text-[#4a4a6a] tracking-wider mb-3">
-                        ⚠️ {extratoResultado.duplicatas.length} POSSÍVEIS DUPLICATAS (não serão adicionadas)
+                        ⚠️ {extratoResultado.duplicatas.length} POSSÍVEIS DUPLICATAS
                       </div>
                       <div className="flex flex-col gap-2">
                         {extratoResultado.duplicatas.map((t, i) => (
@@ -332,7 +378,6 @@ export default function Gastos() {
               )}
             </div>
 
-            {/* Footer modal */}
             {extratoResultado && (
               <div className="px-6 py-4 border-t border-[#1e1e2e] flex items-center justify-between">
                 <div className="text-xs text-[#6a6a8a]">
@@ -341,9 +386,7 @@ export default function Gastos() {
                 </div>
                 <div className="flex gap-3">
                   <button onClick={() => { setExtratoResultado(null); setSelecionadas({}); }}
-                    className="px-4 py-2 text-xs text-[#6a6a8a] hover:text-[#e8e8f0] transition-colors">
-                    Voltar
-                  </button>
+                    className="px-4 py-2 text-xs text-[#6a6a8a] hover:text-[#e8e8f0] transition-colors">Voltar</button>
                   <button onClick={confirmarExtrato} disabled={confirmando}
                     className="px-5 py-2 bg-[#6c5fff] hover:bg-[#7c6fff] disabled:opacity-50 rounded-lg text-xs font-semibold text-white transition-colors">
                     {confirmando ? "Adicionando..." : `Adicionar ${Object.values(selecionadas).filter(v => v).length} gastos`}
